@@ -64,6 +64,7 @@ Edit `config.json`, then run `./install.sh` again to restart.
 | `show_model` | `true` | Show the model name |
 | `show_agent_count` | `true` | Show how many agents are running |
 | `show_agent_avatar` | `true` | Show the agent badge |
+| `show_agent_names` | `false` | Show the task titles of running subagents when you hover over the T3 logo. They can describe your work, so they are off by default |
 | `poll_seconds` | `15` | How often to check T3 Code |
 | `idle_text` | `Idle` | Text when no agent is running |
 | `client_id` | shared app | Discord application ID (see below) |
@@ -85,6 +86,7 @@ Every 15 seconds the script:
 
 1. Checks whether T3 Code is running. It reads the process ID and start time in `server-runtime.json` inside the T3 Code data folder (`t3_home`, else `$T3CODE_HOME`, else `~/.t3`; both `userdata/` and `dev/` are checked). If that file is missing, it looks for the desktop app process instead.
 2. Reads `statev2.sqlite` in that folder (read-only) to find the active project, running agents and subagents, and the agent type. Model names come from T3 Code's `model-manifest.json`.
+   It also reads the newest lines of T3 Code's event logs in `logs/provider/`. A chat whose turn has ended but still has background work running, such as a long command, counts as running. Log lines from before T3 Code last started are ignored, so a crash can't leave the status stuck.
 3. Sends the status to the Discord app over its local socket (`$TMPDIR/discord-ipc-0`).
 
 The timer shows how long T3 Code has been open. If you run T3 Code in the browser, the status stays on while its server runs, even with no tab open.

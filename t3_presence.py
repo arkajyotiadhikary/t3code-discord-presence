@@ -32,6 +32,7 @@ DEFAULT_CONFIG = {
     "show_model": True,
     "show_agent_count": True,
     "show_agent_avatar": True,
+    "show_agent_names": False,
     "image_base_url": "",
     "large_image": "t3code",
     "large_text": "T3 Code",
@@ -271,17 +272,66 @@ def sessions_have_driver(conn):
     return "driver" in columns
 
 
-def read_t3_state(state_dir):
+_task_logs = {}
+BACKGROUND_EVENT = '"subtype":"background_tasks_changed"'
+LOG_TIME = re.compile(r"^\[([^\]]+)\]")
+
+
+def background_tasks(state_dir, since=None):
+    logs = state_dir / "logs" / "provider"
+    cutoff = max(time.time() - 12 * 3600, since or 0)
+    found = {}
+    try:
+        files = list(logs.glob("events.*.log"))
+    except OSError:
+        return found
+    for path in files:
+        thread_id = path.name[len("events."):-len(".log")]
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_mtime < cutoff:
+            _task_logs.pop(path, None)
+            continue
+        offset, tasks, at = _task_logs.get(path, (0, [], 0))
+        if stat.st_size < offset:
+            offset, tasks, at = 0, [], 0
+        try:
+            with path.open("rb") as f:
+                f.seek(offset)
+                chunk = f.read()
+        except OSError:
+            continue
+        end = chunk.rfind(b"\n") + 1
+        for line in chunk[:end].decode("utf-8", "replace").splitlines():
+            if BACKGROUND_EVENT not in line:
+                continue
+            try:
+                stamp = parse_started_at(LOG_TIME.match(line)[1])
+                payload = json.loads(line[line.index("{"):])["event"]["payload"]
+            except (TypeError, ValueError, KeyError, IndexError):
+                continue
+            if isinstance(payload, dict) and isinstance(payload.get("tasks"), list):
+                tasks, at = payload["tasks"], stamp
+        _task_logs[path] = (offset + end, tasks, at)
+        if tasks and at >= cutoff:
+            found[thread_id] = [t for t in tasks if isinstance(t, dict)]
+    return found
+
+
+def read_t3_state(state_dir, since=None):
     db_path = state_dir / "statev2.sqlite"
     if not db_path.exists():
         return None
+    background = background_tasks(state_dir, since)
+    background_ids = json.dumps(sorted(background))
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
     try:
         conn.row_factory = sqlite3.Row
         placeholders = ",".join("?" for _ in ACTIVE_RUN_STATUSES)
         subagent_placeholders = ",".join("?" for _ in ACTIVE_SUBAGENT_STATUSES)
-        active = conn.execute(
-            f"""
+        active_cte = f"""
             WITH active_threads AS (
               SELECT DISTINCT r.thread_id
               FROM orchestration_v2_projection_runs r
@@ -289,9 +339,13 @@ def read_t3_state(state_dir):
               WHERE r.status IN ({placeholders})
                 AND t.deleted_at IS NULL
                 AND r.requested_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 hours')
+              UNION
+              SELECT t.thread_id
+              FROM orchestration_v2_projection_threads t
+              WHERE t.deleted_at IS NULL AND t.thread_id IN (SELECT value FROM json_each(?))
             ),
             active_subagents AS (
-              SELECT s.subagent_id
+              SELECT s.subagent_id, s.payload_json, COALESCE(s.started_at, s.updated_at) AS started
               FROM orchestration_v2_projection_subagents s
               JOIN active_threads a ON a.thread_id = s.thread_id
               WHERE s.status IN ({subagent_placeholders})
@@ -300,10 +354,35 @@ def read_t3_state(state_dir):
                 AND (s.child_thread_id IS NULL
                      OR s.child_thread_id NOT IN (SELECT thread_id FROM active_threads))
             )
-            SELECT (SELECT COUNT(*) FROM active_threads) + (SELECT COUNT(*) FROM active_subagents) AS n
-            """,
-            ACTIVE_RUN_STATUSES + ACTIVE_SUBAGENT_STATUSES,
+        """
+        params = ACTIVE_RUN_STATUSES + (background_ids,) + ACTIVE_SUBAGENT_STATUSES
+        active = conn.execute(
+            active_cte
+            + "SELECT (SELECT COUNT(*) FROM active_threads) + (SELECT COUNT(*) FROM active_subagents) AS n",
+            params,
         ).fetchone()["n"]
+        agent_names = [
+            row["title"].strip()
+            for row in conn.execute(
+                active_cte
+                + """
+                SELECT json_extract(payload_json, '$.title') AS title
+                FROM active_subagents
+                WHERE json_valid(payload_json)
+                ORDER BY started
+                """,
+                params,
+            )
+            if isinstance(row["title"], str) and row["title"].strip()
+        ]
+        agent_names += [
+            task["description"].strip()
+            for tasks in background.values()
+            for task in tasks
+            if task.get("task_type") != "local_agent"
+            and isinstance(task.get("description"), str)
+            and task["description"].strip()
+        ]
         latest = conn.execute(
             f"""
             SELECT t.thread_id, t.title AS thread_title, p.title AS project_title,
@@ -313,10 +392,11 @@ def read_t3_state(state_dir):
             LEFT JOIN orchestration_v2_projection_runs r
               ON r.thread_id = t.thread_id AND r.status IN ({placeholders})
             WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
-            ORDER BY (r.run_id IS NOT NULL) DESC, COALESCE(r.requested_at, t.updated_at) DESC
+            ORDER BY (r.run_id IS NOT NULL OR t.thread_id IN (SELECT value FROM json_each(?))) DESC,
+                     COALESCE(r.requested_at, t.updated_at) DESC
             LIMIT 1
             """,
-            ACTIVE_RUN_STATUSES,
+            ACTIVE_RUN_STATUSES + (background_ids,),
         ).fetchone()
         model, driver = None, None
         if latest:
@@ -342,16 +422,35 @@ def read_t3_state(state_dir):
                         (latest["thread_id"], driver),
                     ).fetchone()
                     model = row["model"] if row else None
+        if latest and model is None:
+            row = conn.execute(
+                """
+                SELECT COALESCE(
+                  (SELECT json_extract(payload_json, '$.modelSelection.model')
+                   FROM orchestration_v2_projection_runs
+                   WHERE thread_id = ? AND json_valid(payload_json)
+                     AND json_extract(payload_json, '$.modelSelection.model') IS NOT NULL
+                   ORDER BY requested_at DESC LIMIT 1),
+                  (SELECT json_extract(payload_json, '$.modelSelection.model')
+                   FROM orchestration_v2_projection_threads
+                   WHERE thread_id = ? AND json_valid(payload_json))
+                ) AS model
+                """,
+                (latest["thread_id"], latest["thread_id"]),
+            ).fetchone()
+            model = row["model"] if row and isinstance(row["model"], str) else None
         state = {
             "active_agents": active,
             "project": latest["project_title"] if latest else None,
             "thread": latest["thread_title"] if latest else None,
             "model": model,
+            "agent_names": agent_names,
             "provider": driver or (latest["provider"] if latest else None),
         }
     finally:
         conn.close()
-    state["model_name"] = model_names(state_dir).get(driver, {}).get(model) if driver and model else None
+    agent = state["provider"]
+    state["model_name"] = model_names(state_dir).get(agent, {}).get(model) if agent and model else None
     return state
 
 
@@ -459,7 +558,11 @@ def build_activity(config, state, started_at):
     if config["show_model"] and model:
         parts.append(model)
 
-    assets = {"large_image": image(config, config["large_image"]), "large_text": config["large_text"]}
+    large_text = config["large_text"]
+    names = state.get("agent_names") or []
+    if config["show_agent_names"] and n and names:
+        large_text = "\n".join(names)
+    assets = {"large_image": image(config, config["large_image"]), "large_text": clip(large_text)}
     if config["show_agent_avatar"]:
         same_name = model and (model == label or model.startswith(f"{label} "))
         who = model if same_name else f"{label} · {model}" if model else label
@@ -470,7 +573,7 @@ def build_activity(config, state, started_at):
         "details": clip(details),
         "state": clip(" · ".join(parts)),
         "timestamps": {"start": started_at},
-        "assets": assets,
+        "assets": {k: v for k, v in assets.items() if v},
     }
     return {k: v for k, v in activity.items() if v}
 
@@ -491,7 +594,7 @@ def main():
             state_dir, t3_started = find_t3_state_dir(config)
             if state_dir:
                 started_at = int(t3_started) if t3_started is not None else started_at or int(time.time())
-                activity = build_activity(config, read_t3_state(state_dir), started_at)
+                activity = build_activity(config, read_t3_state(state_dir, t3_started), started_at)
             else:
                 started_at = None
                 activity = None
