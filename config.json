@@ -1,0 +1,13 @@
+{
+  "client_id": "1567073248292642889",
+  "poll_seconds": 15,
+  "show_project": true,
+  "show_thread_title": false,
+  "show_model": true,
+  "show_agent_count": true,
+  "large_image": "t3code",
+  "large_text": "T3 Code",
+  "idle_text": "Idle",
+  "show_agent_avatar": true,
+  "image_base_url": ""
+}
