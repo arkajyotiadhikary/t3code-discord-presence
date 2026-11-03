@@ -9,5 +9,6 @@
   "large_text": "T3 Code",
   "idle_text": "Idle",
   "show_agent_avatar": true,
-  "image_base_url": ""
+  "image_base_url": "",
+  "t3_home": ""
 }

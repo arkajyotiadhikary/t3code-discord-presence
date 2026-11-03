@@ -25,6 +25,11 @@ AGENTS = {
     "agent_opencode": "opencode",
     "agent_grok": "grok",
     "agent_antigravity": "antigravity",
+    "agent_kiro": "kiro",
+    "agent_muse": "muse",
+    "agent_pi": "pi",
+    "agent_fx": "fx",
+    "agent_acp": "acp",
     "agent_other": "A",
 }
 LOGO_SCALE = 0.5
