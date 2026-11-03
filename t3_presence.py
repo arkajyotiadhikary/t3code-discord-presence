@@ -147,14 +147,27 @@ def read_t3_state():
         placeholders = ",".join("?" for _ in ACTIVE_RUN_STATUSES)
         active = conn.execute(
             f"""
-            SELECT COUNT(DISTINCT r.thread_id) AS n
-            FROM orchestration_v2_projection_runs r
-            JOIN orchestration_v2_projection_threads t USING (thread_id)
-            WHERE r.status IN ({placeholders})
-              AND t.deleted_at IS NULL
-              AND r.requested_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 hours')
+            WITH active_threads AS (
+              SELECT DISTINCT r.thread_id
+              FROM orchestration_v2_projection_runs r
+              JOIN orchestration_v2_projection_threads t USING (thread_id)
+              WHERE r.status IN ({placeholders})
+                AND t.deleted_at IS NULL
+                AND r.requested_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 hours')
+            ),
+            active_subagents AS (
+              SELECT s.subagent_id
+              FROM orchestration_v2_projection_subagents s
+              JOIN active_threads a ON a.thread_id = s.thread_id
+              WHERE s.status IN ({placeholders})
+                AND s.completed_at IS NULL
+                AND COALESCE(s.started_at, s.updated_at) > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 hours')
+                AND (s.child_thread_id IS NULL
+                     OR s.child_thread_id NOT IN (SELECT thread_id FROM active_threads))
+            )
+            SELECT (SELECT COUNT(*) FROM active_threads) + (SELECT COUNT(*) FROM active_subagents) AS n
             """,
-            ACTIVE_RUN_STATUSES,
+            ACTIVE_RUN_STATUSES * 2,
         ).fetchone()["n"]
         latest = conn.execute(
             f"""

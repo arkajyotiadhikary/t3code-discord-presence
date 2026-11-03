@@ -15,7 +15,7 @@ An agent badge in the T3 Code style sits in the corner of the status. It shows t
 
 ## Features
 
-- Shows your current T3 Code project, how many agents are running, and the model
+- Shows your current T3 Code project, how many agents are running (subagents included), and the model
 - Agent logo badge: Claude, Codex, Cursor, OpenCode, Grok, Antigravity/Gemini, a fallback for other agents, and a gray pause badge when idle
 - Elapsed timer while T3 Code is open; status clears when you close it
 - Reconnects on its own when Discord restarts
