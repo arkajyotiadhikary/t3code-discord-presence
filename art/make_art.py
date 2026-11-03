@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the Discord art assets. Needs Pillow: pip install pillow"""
+"""Draws the Discord art assets in the T3 Code style. Needs Pillow: pip install pillow"""
 
 from pathlib import Path
 
@@ -7,90 +7,105 @@ from PIL import Image, ImageDraw, ImageFont
 
 OUT = Path(__file__).resolve().parent
 SIZE = 1024
-SCALE = 2
+SCALE = 4
 S = SIZE * SCALE
 
-AGENTS = {
-    "agent_claude": {"bg": "#F4A261", "head": "#FFF4E6", "accent": "#E76F51", "mood": "happy"},
-    "agent_codex": {"bg": "#2A9D8F", "head": "#E9FFF9", "accent": "#1D6F65", "mood": "focused"},
-    "agent_other": {"bg": "#8E7CC3", "head": "#F3EFFF", "accent": "#5E4B9C", "mood": "happy"},
-    "agent_idle": {"bg": "#8D99AE", "head": "#EDF2F4", "accent": "#5C677D", "mood": "sleepy"},
-}
+BG = "#000000"
+CARD = "#0A0A0A"
+FG = "#F5F5F5"
+RING_IDLE = "#525252"
+ACCENT = "#6193FF"
 
-INK = "#2B2D42"
+LOGOS = OUT / "logos"
+
+AGENTS = {
+    "agent_claude": "claude",
+    "agent_codex": "codex",
+    "agent_cursor": "cursor",
+    "agent_opencode": "opencode",
+    "agent_grok": "grok",
+    "agent_antigravity": "antigravity",
+    "agent_other": "A",
+}
+LOGO_SCALE = 0.5
+
+FONT_PATHS = (
+    "/System/Library/Fonts/SFNS.ttf",
+    "/System/Library/Fonts/HelveticaNeue.ttc",
+    "DejaVuSans-Bold.ttf",
+)
 
 
 def px(v):
     return int(v * S)
 
 
-def font(size):
-    for name in ("/System/Library/Fonts/SFNSMono.ttf", "/System/Library/Fonts/Menlo.ttc", "DejaVuSansMono-Bold.ttf"):
+def bold_font(size):
+    for path in FONT_PATHS:
         try:
-            return ImageFont.truetype(name, size)
+            f = ImageFont.truetype(path, size)
         except OSError:
             continue
+        try:
+            f.set_variation_by_name("Bold")
+        except (OSError, ValueError):
+            if path.endswith("HelveticaNeue.ttc"):
+                f = ImageFont.truetype(path, size, index=1)
+        return f
     return ImageFont.load_default(size)
 
 
-def draw_robot(spec):
+def centered_text(d, text, font, fill):
+    left, top, right, bottom = d.textbbox((0, 0), text, font=font)
+    d.text(((S - (right - left)) / 2 - left, (S - (bottom - top)) / 2 - top), text, font=font, fill=fill)
+
+
+def badge_base(ring_color):
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    line = px(0.022)
+    d.ellipse([0, 0, S, S], fill=ring_color)
+    inset = px(0.075)
+    d.ellipse([inset, inset, S - inset, S - inset], fill=CARD)
+    return img, d
 
-    d.ellipse([0, 0, S, S], fill=spec["bg"])
 
-    d.line([px(0.5), px(0.27), px(0.5), px(0.16)], fill=INK, width=line)
-    d.ellipse([px(0.455), px(0.11), px(0.545), px(0.2)], fill=spec["accent"], outline=INK, width=line)
-
-    d.rounded_rectangle([px(0.17), px(0.42), px(0.25), px(0.6)], radius=px(0.03), fill=spec["accent"], outline=INK, width=line)
-    d.rounded_rectangle([px(0.75), px(0.42), px(0.83), px(0.6)], radius=px(0.03), fill=spec["accent"], outline=INK, width=line)
-
-    d.rounded_rectangle([px(0.22), px(0.27), px(0.78), px(0.76)], radius=px(0.14), fill=spec["head"], outline=INK, width=line)
-
-    d.ellipse([px(0.27), px(0.56), px(0.35), px(0.62)], fill=spec["bg"])
-    d.ellipse([px(0.65), px(0.56), px(0.73), px(0.62)], fill=spec["bg"])
-
-    mood = spec["mood"]
-    if mood == "sleepy":
-        for cx in (0.38, 0.62):
-            d.arc([px(cx - 0.065), px(0.43), px(cx + 0.065), px(0.53)], 20, 160, fill=INK, width=line)
-        d.ellipse([px(0.47), px(0.63), px(0.53), px(0.68)], outline=INK, width=line)
-        z = font(px(0.09))
-        d.text((px(0.7), px(0.17)), "z", font=z, fill=INK)
-        d.text((px(0.79), px(0.08)), "z", font=font(px(0.12)), fill=INK)
+def draw_agent(mark):
+    img, d = badge_base(ACCENT)
+    logo_path = LOGOS / f"{mark}.png"
+    if logo_path.exists():
+        side = px(LOGO_SCALE)
+        logo = Image.open(logo_path).convert("RGBA").resize((side, side), Image.LANCZOS)
+        img.alpha_composite(logo, ((S - side) // 2, (S - side) // 2))
     else:
-        for cx in (0.38, 0.62):
-            d.ellipse([px(cx - 0.06), px(0.41), px(cx + 0.06), px(0.53)], fill=INK)
-            d.ellipse([px(cx - 0.015), px(0.425), px(cx + 0.025), px(0.465)], fill="white")
-        if mood == "focused":
-            d.line([px(0.31), px(0.37), px(0.45), px(0.39)], fill=INK, width=line)
-            d.line([px(0.55), px(0.39), px(0.69), px(0.37)], fill=INK, width=line)
-            d.line([px(0.43), px(0.65), px(0.57), px(0.65)], fill=INK, width=line)
-        else:
-            d.arc([px(0.4), px(0.56), px(0.6), px(0.69)], 20, 160, fill=INK, width=line)
-
+        centered_text(d, mark, bold_font(px(0.52)), FG)
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
-def draw_large():
+def draw_idle():
+    img, d = badge_base(RING_IDLE)
+    w, h, gap = px(0.085), px(0.32), px(0.075)
+    top = (S - h) // 2
+    for x in (S // 2 - gap - w, S // 2 + gap):
+        d.rounded_rectangle([x, top, x + w, top + h], radius=px(0.02), fill="#A3A3A3")
+    return img.resize((SIZE, SIZE), Image.LANCZOS)
+
+
+def draw_terminal():
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, S, S], radius=px(0.22), fill="#14161F")
-    d.rounded_rectangle([px(0.1), px(0.1), px(0.9), px(0.9)], radius=px(0.14), fill="#1F2230", outline="#3A3F55", width=px(0.012))
-    for i, color in enumerate(("#FF5F57", "#FEBC2E", "#28C840")):
-        x = 0.19 + i * 0.07
-        d.ellipse([px(x - 0.022), px(0.18), px(x + 0.022), px(0.224)], fill=color)
-    w = px(0.06)
-    d.line([px(0.25), px(0.4), px(0.42), px(0.53), px(0.25), px(0.66)], fill="#F4A261", width=w, joint="curve")
-    d.rounded_rectangle([px(0.48), px(0.62), px(0.74), px(0.68)], radius=px(0.02), fill="#EDF2F4")
+    d.rounded_rectangle([0, 0, S, S], radius=px(0.2), fill=BG)
+    d.rounded_rectangle([px(0.1), px(0.1), px(0.9), px(0.9)], radius=px(0.12), fill=CARD, outline="#242424", width=px(0.01))
+    w = px(0.065)
+    d.line([px(0.27), px(0.38), px(0.44), px(0.5), px(0.27), px(0.62)], fill=ACCENT, width=w, joint="curve")
+    d.rounded_rectangle([px(0.5), px(0.585), px(0.73), px(0.645)], radius=px(0.02), fill=FG)
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
 def main():
-    draw_large().save(OUT / "terminal.png")
-    for name, spec in AGENTS.items():
-        draw_robot(spec).save(OUT / f"{name}.png")
+    draw_terminal().save(OUT / "terminal.png")
+    for name, mark in AGENTS.items():
+        draw_agent(mark).save(OUT / f"{name}.png")
+    draw_idle().save(OUT / "agent_idle.png")
     print("Wrote", ", ".join(sorted(p.name for p in OUT.glob("*.png"))))
 
 

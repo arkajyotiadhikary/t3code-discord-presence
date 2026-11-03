@@ -7,7 +7,7 @@ Show what you are doing in [T3 Code](https://github.com/pingdotgg/t3code) as you
 > 2 agents running · Opus 5.5
 > 00:42 elapsed
 
-A cartoon agent badge sits in the corner of the status. It changes with the agent that is working, and falls asleep when nothing is running:
+An agent badge in the T3 Code style sits in the corner of the status. It shows the logo of the agent that is working, and turns into a gray pause badge when nothing is running:
 
 ![Agent avatars: Claude, Codex, other, idle](docs/avatars.png)
 
@@ -16,7 +16,7 @@ A cartoon agent badge sits in the corner of the status. It changes with the agen
 ## Features
 
 - Shows your current T3 Code project, how many agents are running, and the model
-- Agent avatar badge: Claude, Codex, other agents, and a sleepy one when idle
+- Agent logo badge: Claude, Codex, Cursor, OpenCode, Grok, Antigravity/Gemini, a fallback for other agents, and a gray pause badge when idle
 - Elapsed timer while T3 Code is open; status clears when you close it
 - Reconnects on its own when Discord restarts
 - Starts automatically at login
@@ -62,7 +62,7 @@ Edit `config.json`, then run `./install.sh` again to restart.
 | `show_thread_title` | `false` | Show the current thread title |
 | `show_model` | `true` | Show the model name |
 | `show_agent_count` | `true` | Show how many agents are running |
-| `show_agent_avatar` | `true` | Show the cartoon agent badge |
+| `show_agent_avatar` | `true` | Show the agent badge |
 | `poll_seconds` | `15` | How often to check T3 Code |
 | `idle_text` | `Idle` | Text when no agent is running |
 | `client_id` | shared app | Discord application ID (see below) |
@@ -74,7 +74,7 @@ Edit `config.json`, then run `./install.sh` again to restart.
 The default `client_id` points to a shared Discord app that already has the pictures. To use your own name or art:
 
 1. Create an app at https://discord.com/developers/applications. Its name is what shows after "Playing".
-2. Upload pictures under **Rich Presence → Art Assets** named `t3code`, `agent_claude`, `agent_codex`, `agent_other`, `agent_idle`. The robots are in `art/`; `art/terminal.png` works as the `t3code` picture.
+2. Upload the pictures from `art/` under **Rich Presence → Art Assets**, using the file name as the asset name: `agent_claude`, `agent_codex`, `agent_cursor`, `agent_opencode`, `agent_grok`, `agent_antigravity`, `agent_other`, `agent_idle`, plus a `t3code` picture (`art/terminal.png` works). Missing agent pictures fall back to `agent_other`.
 3. Put the Application ID in `config.json` as `client_id` and run `./install.sh`.
 
 ## How it works
@@ -95,7 +95,9 @@ T3 Code is in beta and its database layout can change. If an update breaks the s
 
 ## Art
 
-The robot avatars are drawn by `art/make_art.py` (needs Pillow: `pip install pillow`). Change the colors there and run it to make new ones.
+The badges are drawn by `art/make_art.py` (needs Pillow: `pip install pillow`) using the T3 Code website colors: black, white, and the `#6193FF` blue accent. The agent logos in `art/logos/` are the same ones shown on the T3 Code website. Change things there and run the script to make new ones.
+
+Agent logos are trademarks of their respective owners and are used only to show which agent is running.
 
 ## License
 

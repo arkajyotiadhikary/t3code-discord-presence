@@ -199,13 +199,31 @@ def clip(text, limit=128):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+AGENT_KINDS = (
+    ("claude", "claude", "Claude"),
+    ("codex", "codex", "Codex"),
+    ("openai", "codex", "Codex"),
+    ("cursor", "cursor", "Cursor"),
+    ("opencode", "opencode", "OpenCode"),
+    ("grok", "grok", "Grok"),
+    ("antigravity", "antigravity", "Antigravity"),
+    ("gemini", "antigravity", "Gemini"),
+)
+
+
 def agent_kind(provider):
     provider = (provider or "").lower()
-    if "claude" in provider:
-        return "claude"
-    if "codex" in provider:
-        return "codex"
-    return "other"
+    for needle, kind, label in AGENT_KINDS:
+        if needle in provider:
+            return kind, label
+    return "other", "Agent"
+
+
+def agent_image(config, kind):
+    key = f"agent_{kind}"
+    if not config.get("image_base_url") and key not in asset_urls(config["client_id"]):
+        key = "agent_other"
+    return image(config, key)
 
 
 _asset_urls = {"fetched_at": 0, "urls": {}}
@@ -260,11 +278,10 @@ def build_activity(config, state, started_at):
 
     assets = {"large_image": image(config, config["large_image"]), "large_text": config["large_text"]}
     if config["show_agent_avatar"]:
-        kind = agent_kind(state.get("provider"))
-        label = {"claude": "Claude", "codex": "Codex"}.get(kind, "Agent")
+        kind, label = agent_kind(state.get("provider"))
         model = pretty_model(state.get("model"))
         who = f"{label} · {model}" if model and model != label else label
-        assets["small_image"] = image(config, f"agent_{kind}" if n else "agent_idle")
+        assets["small_image"] = agent_image(config, kind) if n else image(config, "agent_idle")
         assets["small_text"] = f"{who} is cooking" if n else f"{who} is chilling"
 
     activity = {
